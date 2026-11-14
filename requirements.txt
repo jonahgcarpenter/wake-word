@@ -1,4 +1,7 @@
-# Single Python dep list for the Docker build (pinned OWW stack, Python 3.10).
+# Single Python dep list for the Docker build and local `uv run`.
 # Managed with uv + .venv: `uv venv && uv pip install -r requirements.txt`.
-# torch==1.13.1, tensorflow==2.8.1, datasets==2.14.4, pyarrow<15, fsspec<2024.1.0, etc.
-# Runtime + training together; system packages (CUDA 11.7, ffmpeg, espeak-ng) live in Dockerfile.
+# System packages (CUDA 11.7, ffmpeg, espeak-ng, piper binary) live in Dockerfile.
+# Training pins (Docker python3.10 only): torch==1.13.1, tensorflow==2.8.1,
+# datasets==2.14.4, pyarrow<15, fsspec<2024.1.0 (added with train_model.py).
+pyyaml>=6
+piper-tts>=1.3

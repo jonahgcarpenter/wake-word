@@ -1,4 +1,0 @@
-# OpenWakeWord training config template (consumed by src/train.py only).
-# Defines model_name, target_phrase, n_samples, augmentation_rounds, layer_size, steps,
-# batch_n_per_class, max_negative_weight, target_false_positives_per_hour.
-# Copy per model version into data/models/<model_name>/ for reproducibility.

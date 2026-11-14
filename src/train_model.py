@@ -1,6 +1,6 @@
 """Train wake-word model. Library module, called via main.py only.
 
-Training wrapper only: reads configs/custom_model.yml, runs OWW loop.
+Training wrapper only: reads configs/custom_model.yaml, runs OWW loop.
 No data download, synthesis, evaluation, or export logic here.
 """
 

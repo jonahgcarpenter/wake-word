@@ -1,6 +1,22 @@
+name: wake-word
+
 services:
+  synth:
+    build: .
+    image: oww-pipeline:latest
+    container_name: oww-synth
+    volumes:
+      - ./data:/work/data
+      - ./configs:/work/configs
+      - ./src:/work/src
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["sleep", "infinity"]
+
   train:
     build: .
+    image: oww-pipeline:latest
+    container_name: oww-train
     runtime: nvidia
     shm_size: 32g
     volumes:
@@ -9,4 +25,4 @@ services:
       - ./src:/work/src
     environment:
       - PYTHONUNBUFFERED=1
-    command: ["python", "main.py", "--help"]
+    command: ["sleep", "infinity"]

@@ -1,0 +1,35 @@
+# Piper TTS voice list (consumed by src/synthesize_clips.py only).
+# All en_US voices, round-robined for positives. Secondary voices are for
+# cross-lingual negatives only.
+primary:
+  base_url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US"
+  models:
+    en_US-amy-medium: "amy/medium"
+    en_US-arctic-medium: "arctic/medium"
+    en_US-bryce-medium: "bryce/medium"
+    en_US-danny-low: "danny/low"
+    en_US-hfc_female-medium: "hfc_female/medium"
+    en_US-hfc_male-medium: "hfc_male/medium"
+    en_US-hifi_tts_92-medium: "hifi_tts_92/medium"
+    en_US-joe-medium: "joe/medium"
+    en_US-john-medium: "john/medium"
+    en_US-kathleen-medium: "kathleen/medium"
+    en_US-kristin-medium: "kristin/medium"
+    en_US-kusal-medium: "kusal/medium"
+    en_US-l2arctic-medium: "l2arctic/medium"
+    en_US-lessac-medium: "lessac/medium"
+    en_US-libritts-medium: "libritts/medium"
+    en_US-libritts_r-medium: "libritts_r/medium"
+    en_US-ljspeech-medium: "ljspeech/medium"
+    en_US-mike-medium: "mike/medium"
+    en_US-norman-medium: "norman/medium"
+    en_US-reza_ibrahim-medium: "reza_ibrahim/medium"
+    en_US-ryan-medium: "ryan/medium"
+    en_US-sam-medium: "sam/medium"
+
+secondary:
+  base_url: "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+  models:
+    fr_FR-siwis-medium: "fr/fr_FR/siwis/medium"
+    de_DE-thorsten-medium: "de/de_DE/thorsten/medium"
+    es_ES-davefx-medium: "es/es_ES/davefx/medium"

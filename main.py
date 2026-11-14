@@ -52,12 +52,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=0)
 
     p = sub.add_parser("synthesize", help="Piper TTS -> data/synthetic/")
-    p.add_argument("--config", default="configs/custom_model.yml")
-    p.add_argument("--voices", default="configs/voices.yml")
+    p.add_argument("--config", default="configs/custom_model.yaml")
+    p.add_argument("--voices", default="configs/voices.yaml")
     p.add_argument("--synthetic-dir", default="data/synthetic")
+    p.add_argument(
+        "--preview",
+        type=int,
+        default=0,
+        help="render N preview clips only (1 per voice cycled)",
+    )
+    p.add_argument(
+        "--limit", type=int, default=0, help="cap clips per split/kind (quick tests)"
+    )
+    p.add_argument(
+        "--force", action="store_true", help="re-render even if manifest lists the clip"
+    )
+    p.add_argument(
+        "--jobs", type=int, default=0, help="render threads (default: cpu count)"
+    )
+    p.add_argument("--piper-bin", default="piper")
+    p.add_argument(
+        "--voice-cache", default="", help="voice dir (default: data/background/piper)"
+    )
 
     p = sub.add_parser("train", help="OWW training -> data/models/")
-    p.add_argument("--config", default="configs/custom_model.yml")
+    p.add_argument("--config", default="configs/custom_model.yaml")
     p.add_argument("--synthetic-dir", default="data/synthetic")
     p.add_argument("--models-dir", default="data/models")
 
@@ -91,7 +110,17 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
         )
     elif args.cmd == "synthesize":
-        run_synthesize(Path(args.config), Path(args.voices), Path(args.synthetic_dir))
+        run_synthesize(
+            Path(args.config),
+            Path(args.voices),
+            Path(args.synthetic_dir),
+            preview=args.preview,
+            limit=args.limit,
+            force=args.force,
+            jobs=args.jobs or None,
+            piper_bin=args.piper_bin,
+            voice_cache=Path(args.voice_cache) if args.voice_cache else None,
+        )
     elif args.cmd == "train":
         run_train(Path(args.config), Path(args.synthetic_dir), Path(args.models_dir))
     elif args.cmd == "evaluate":
