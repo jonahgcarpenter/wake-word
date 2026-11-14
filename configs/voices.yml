@@ -1,0 +1,2 @@
+# Piper TTS voice list per language (consumed by src/generate_synthetic.py only).
+# Separates voice selection from training hyperparams in custom_model.yml.
