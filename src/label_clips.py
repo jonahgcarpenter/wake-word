@@ -1,16 +1,9 @@
-#!/usr/bin/env python3
-"""Iterate raw clips, play audio, collect T/F human labels.
+"""Label raw clips into data/classified/. Library module, called via main.py only.
 
 Reads:  <raw_dir>/<device>/<activations|near_misses>/<id>.wav (+.json)
 Writes: <classified_dir>/true/<device>__<id>.wav (+.json)
         <classified_dir>/false/<device>__<id>.wav (+.json)
         <classified_dir>/manifest.csv
-
-Keys (single press, no Enter needed on Linux tty):
-  T = true activation (really "Hey Oswald")   F = false activation
-  S = skip   R = replay   Q = quit
-Standalone: python classify.py [--no-play] [--limit N]
-Stdlib only.
 """
 
 import csv
@@ -135,7 +128,6 @@ def run_label(
     false_d = classified_dir / "false"
     true_d.mkdir(parents=True, exist_ok=True)
     false_d.mkdir(parents=True, exist_ok=True)
-    new_rows = not manifest.exists()
     f = manifest.open("a", newline="") if manifest.exists() else None
     writer = None
     if f is None:
@@ -147,9 +139,7 @@ def run_label(
 
     n_true = n_false = n_skip = 0
     pending = [c for c in clips if relabel or str(c) not in done]
-    print(
-        f"{len(pending)} to review ({len(clips)} total, {len(clips) - len(pending)} already labeled)"
-    )
+    print(f"{len(pending)} to review ({len(clips)} total)")
 
     try:
         for i, wav in enumerate(pending, 1):
@@ -206,45 +196,5 @@ def run_label(
         print("\nInterrupted, progress saved.")
     finally:
         f.close()
-    print(
-        f"\nLabeled this run: {n_true} true, {n_false} false, {n_skip} skipped -> {classified_dir}/"
-    )
+    print(f"\nLabeled: {n_true} true, {n_false} false, {n_skip} skipped")
     return n_true, n_false, n_skip
-
-
-def main() -> int:
-    import argparse
-
-    ap = argparse.ArgumentParser(description="Play + T/F label raw/ -> classified/")
-    ap.add_argument("--raw-dir", default="raw")
-    ap.add_argument("--classified-dir", default="classified")
-    ap.add_argument(
-        "--player",
-        default=None,
-        help="audio player binary (default: auto-detect aplay/paplay/play/ffplay)",
-    )
-    ap.add_argument(
-        "--no-play", action="store_true", help="don't play audio (test manifest flow)"
-    )
-    ap.add_argument("--limit", type=int, default=0, help="only review first N clips")
-    ap.add_argument(
-        "--relabel", action="store_true", help="review even already-labeled clips"
-    )
-    ap.add_argument(
-        "--device", default="", help="only clips whose device contains this string"
-    )
-    args = ap.parse_args()
-    run_label(
-        Path(args.raw_dir),
-        Path(args.classified_dir),
-        player=args.player,
-        no_play=args.no_play,
-        limit=args.limit,
-        relabel=args.relabel,
-        device_filter=args.device,
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

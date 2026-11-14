@@ -1,3 +1,12 @@
-# Compose orchestration only: single GPU training service with NVIDIA runtime.
-# Mounts ./data, ./configs, ./src; sets shm_size for PyTorch DataLoader.
-# No training logic here, see src/train_model.py + configs/custom_model.yml.
+services:
+  train:
+    build: .
+    runtime: nvidia
+    shm_size: 32g
+    volumes:
+      - ./data:/work/data
+      - ./configs:/work/configs
+      - ./src:/work/src
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["python", "main.py", "--help"]

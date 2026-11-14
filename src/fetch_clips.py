@@ -1,37 +1,17 @@
-#!/usr/bin/env python3
-"""Download wake-word diagnostics clips from kiosk satellites.
+"""Fetch satellite debug clips into data/raw/. Library module, called via main.py only.
 
 Raw (immutable) layout:
-  <raw_dir>/<device>/activations/<id>.wav + <id>.json
-  <raw_dir>/<device>/near_misses/<id>.wav + <id>.json
-
-Standalone: python download.py [--force]
-Env (.env): KIOSK_HOSTS, KIOSK_PORT, KIOSK_PASSWORD
-Stdlib only.
+  data/raw/<device>/activations/<id>.wav + <id>.json
+  data/raw/<device>/near_misses/<id>.wav + <id>.json
 """
 
 import base64
 import hashlib
 import json
-import os
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
-
-
-def load_dotenv(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        k = k.strip()
-        v = v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
-            os.environ[k] = v
 
 
 def api_post(
@@ -287,43 +267,3 @@ def run_download(
         f"{total_fail} failed -> {raw_dir}/"
     )
     return total_new, total_deduped, total_fail
-
-
-def main() -> int:
-    import argparse
-
-    load_dotenv(Path(".env"))
-    ap = argparse.ArgumentParser(
-        description="Download wake-word clips from kiosks -> raw/"
-    )
-    ap.add_argument("--hosts", default=os.environ.get("KIOSK_HOSTS", ""))
-    ap.add_argument(
-        "--port", type=int, default=int(os.environ.get("KIOSK_PORT", "2324"))
-    )
-    ap.add_argument("--password", default=os.environ.get("KIOSK_PASSWORD", ""))
-    ap.add_argument("--raw-dir", default="raw")
-    ap.add_argument("--timeout", type=int, default=15)
-    ap.add_argument(
-        "--force",
-        action="store_true",
-        help="re-download even if the wav already exists",
-    )
-    args = ap.parse_args()
-
-    hosts = [h.strip() for h in args.hosts.split(",") if h.strip()]
-    if not hosts:
-        print("ERROR: no hosts. Set KIOSK_HOSTS or use --hosts", file=sys.stderr)
-        return 2
-    if not args.password:
-        print(
-            "ERROR: no password. Set KIOSK_PASSWORD or use --password", file=sys.stderr
-        )
-        return 2
-    new, _, fail = run_download(
-        hosts, args.port, args.password, Path(args.raw_dir), args.timeout, args.force
-    )
-    return 1 if fail and not new else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
