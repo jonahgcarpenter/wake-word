@@ -14,15 +14,15 @@ custom_negative_phrases:
   - "hey oscar"
 
 # Synthetic TTS generation (synthesize_clips.py reads n_samples, n_samples_val, tts_batch_size).
-n_samples: 100000
-n_samples_val: 20000
+n_samples: 50000
+n_samples_val: 10000
 tts_batch_size: 50
 
 # Augmentation + training (train_model.py reads the rest).
 augmentation_batch_size: 16
-augmentation_rounds: 3
+augmentation_rounds: 2
 model_type: "dnn"
-layer_size: 128
-steps: 150000
-max_negative_weight: 3000
+layer_size: 32
+steps: 100000
+max_negative_weight: 1500
 target_false_positives_per_hour: 0.2
