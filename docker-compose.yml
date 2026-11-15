@@ -9,6 +9,7 @@ services:
       - ./data:/work/data
       - ./configs:/work/configs
       - ./src:/work/src
+      - ./main.py:/work/main.py
     environment:
       - PYTHONUNBUFFERED=1
     command: ["sleep", "infinity"]
@@ -23,6 +24,7 @@ services:
       - ./data:/work/data
       - ./configs:/work/configs
       - ./src:/work/src
+      - ./main.py:/work/main.py
     environment:
       - PYTHONUNBUFFERED=1
     command: ["sleep", "infinity"]

@@ -6,7 +6,6 @@ Reads configs/voices.yaml; no augmentation, training, or evaluation here.
 """
 
 import csv
-import os
 import shutil
 import subprocess
 import sys
@@ -123,43 +122,32 @@ def _resolve_bin(name: str, label: str) -> str:
     raise RuntimeError(f"{label} binary {name!r} not found (run inside Docker)")
 
 
-def _piper_cmd(piper_bin: str, voice_onnx: Path, tmp: Path) -> list[str]:
-    """Prefer the `piper-tts` pip module (matches retrained HF voices).
-
-    Falls back to the piper binary pinned to its bundled espeak-ng-data,
-    since system espeak-ng phoneme maps are incompatible and crash it.
-    """
-    base = ["--model", str(voice_onnx), "--output_file", str(tmp)]
+def _load_piper_voice(onnx_path: Path):
     try:
-        import piper  # noqa: F401
-
-        return [sys.executable, "-m", "piper", *base]
+        from piper import PiperVoice
     except ImportError:
-        espeak_data = os.environ.get("PIPER_ESPEAK_DATA", "/opt/piper/espeak-ng-data")
-        return [
-            _resolve_bin(piper_bin, "piper"),
-            *base,
-            "--espeak_data",
-            espeak_data,
-        ]
+        raise RuntimeError(
+            "piper-tts is required (`uv pip install -r requirements.txt`)"
+        ) from None
+    return PiperVoice.load(str(onnx_path))
 
 
-def _render_clip(
-    piper_bin: str, voice_onnx: Path, text: str, out_wav: Path, timeout: int = 180
-) -> None:
-    tmp = out_wav.with_suffix(".tmp.wav")
+def _synth_tmp(voice, text: str, tmp: Path) -> None:
+    wrote = False
+    with wave.open(str(tmp), "wb") as w:
+        for chunk in voice.synthesize(text):
+            if not wrote:
+                w.setframerate(chunk.sample_rate)
+                w.setsampwidth(chunk.sample_width)
+                w.setnchannels(chunk.sample_channels)
+                wrote = True
+            w.writeframes(chunk.audio_int16_bytes)
+    if not wrote:
+        raise RuntimeError(f"piper produced no audio for {text!r}")
+
+
+def _resample_16k(tmp: Path, out_wav: Path, timeout: int = 120) -> None:
     try:
-        proc = subprocess.run(
-            _piper_cmd(piper_bin, voice_onnx, tmp),
-            input=text.encode("utf-8"),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            check=False,
-        )
-        if proc.returncode != 0 or not tmp.exists():
-            err = proc.stderr.decode(errors="replace")[-500:]
-            raise RuntimeError(f"piper failed ({voice_onnx.name}): {err}")
         res = subprocess.run(
             [
                 "ffmpeg",
@@ -190,6 +178,25 @@ def _render_clip(
     finally:
         if tmp.exists():
             tmp.unlink()
+
+
+def _voice_worker(
+    voice_key: str,
+    onnx_path: Path,
+    assignments: list[tuple[str, Path, dict]],
+) -> list[dict]:
+    """Load one voice once, render all its clips. One thread per voice."""
+    voice = _load_piper_voice(onnx_path)
+    rows: list[dict] = []
+    for text, out_wav, meta in assignments:
+        out_wav.parent.mkdir(parents=True, exist_ok=True)
+        tmp = out_wav.with_suffix(".tmp.wav")
+        _synth_tmp(voice, text, tmp)
+        _resample_16k(tmp, out_wav)
+        rows.append(
+            {**meta, "text": text, "voice": voice_key, "voice_file": onnx_path.name}
+        )
+    return rows
 
 
 def _phrase_variants(targets: list[str]) -> list[str]:
@@ -275,7 +282,6 @@ def run_synthesize(
     limit: int = 0,
     force: bool = False,
     jobs: int | None = None,
-    piper_bin: str = "piper",
     voice_cache: Path | None = None,
 ) -> Path:
     """Download voices, render TTS clips into synthetic_dir. Returns it."""
@@ -292,10 +298,8 @@ def run_synthesize(
     missing = [k for k in primary + secondary if k not in voice_paths]
     if missing:
         raise RuntimeError(f"voices missing after download: {missing}")
-    piper = piper_bin
     _resolve_bin("ffmpeg", "ffmpeg")
     synthetic_dir.mkdir(parents=True, exist_ok=True)
-    workers = jobs or (os.cpu_count() or 4)
 
     if preview > 0:
         targets = _phrase_variants(
@@ -311,18 +315,19 @@ def run_synthesize(
         out_dir = synthetic_dir / "preview"
         out_dir.mkdir(parents=True, exist_ok=True)
         keys = primary + secondary
-        jobs_list = [
-            (
-                out_dir / f"preview_{i:03d}_{keys[i % len(keys)]}.wav",
-                targets[i % len(targets)],
-                keys[i % len(keys)],
+        by_voice: dict[str, list[tuple[str, Path, dict]]] = {}
+        for i in range(min(preview, 500)):
+            voice = keys[i % len(keys)]
+            wav = out_dir / f"preview_{i:03d}_{voice}.wav"
+            meta = {"file": wav.name, "split": "preview", "kind": "preview"}
+            by_voice.setdefault(voice, []).append(
+                (targets[i % len(targets)], wav, meta)
             )
-            for i in range(min(preview, 500))
-        ]
-        for wav, text, voice in jobs_list:
-            _render_clip(piper, voice_paths[voice], text, wav)
-            print(f"  preview {wav.name}: {text!r} [{voice}]")
-        print(f"preview ready: {len(jobs_list)} clips -> {out_dir}/")
+        _run_pool(voice_paths, by_voice, jobs, manifest=None)
+        print(f"preview ready -> {out_dir}/")
+        for voice, items in by_voice.items():
+            for text, wav, _meta in items:
+                print(f"  preview {wav.name}: {text!r} [{voice}]")
         return synthetic_dir
 
     plan = _plan_clips(cfg, primary, secondary)
@@ -330,54 +335,70 @@ def run_synthesize(
         plan = [p for p in plan if p[2] < limit]
     manifest = synthetic_dir / "manifest.csv"
     done = _load_done(manifest, force)
-    todo = [
-        (kind, split, i, text, voice)
-        for kind, split, i, text, voice in plan
-        if force or f"{kind}_{split}_{i:06d}_{voice}.wav" not in done
-    ]
+    by_voice = {}
+    for kind, split, i, text, voice in plan:
+        name = f"{kind}_{split}_{i:06d}_{voice}.wav"
+        if not force and name in done:
+            continue
+        out = synthetic_dir / split / kind / name
+        meta = {"file": name, "split": split, "kind": kind}
+        by_voice.setdefault(voice, []).append((text, out, meta))
     print(
         f"plan: {len(plan)} clips "
-        f"({len(todo)} to render, {len(plan) - len(todo)} cached)",
+        f"({sum(len(v) for v in by_voice.values())} to render, "
+        f"{len(plan) - sum(len(v) for v in by_voice.values())} cached) "
+        f"across {len(by_voice)} voices",
         flush=True,
     )
-    if not todo:
+    if not by_voice:
         return synthetic_dir
-
-    def _one(item: tuple[str, str, int, str, str]) -> dict:
-        kind, split, i, text, voice = item
-        name = f"{kind}_{split}_{i:06d}_{voice}.wav"
-        out = synthetic_dir / split / kind / name
-        out.parent.mkdir(parents=True, exist_ok=True)
-        _render_clip(piper, voice_paths[voice], text, out)
-        return {
-            "file": name,
-            "split": split,
-            "kind": kind,
-            "text": text,
-            "voice": voice,
-            "voice_file": voice_paths[voice].name,
-        }
-
-    ok = fail = 0
-    errors: list[str] = []
     with manifest.open("a", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=MANIFEST_FIELDS)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(_one, item): item for item in todo}
-            for n, fut in enumerate(as_completed(futures), 1):
-                try:
-                    writer.writerow(fut.result())
+        _run_pool(voice_paths, by_voice, jobs, manifest_writer=writer)
+    return synthetic_dir
+
+
+def _run_pool(
+    voice_paths: dict[str, Path],
+    by_voice: dict[str, list[tuple[str, Path, dict]]],
+    jobs: int | None,
+    manifest=None,
+    manifest_writer=None,
+) -> tuple[int, int]:
+    """Render one thread per voice (model loaded once). Returns (ok, fail)."""
+    total = sum(len(v) for v in by_voice.values())
+    workers = min(jobs or len(by_voice), len(by_voice))
+    ok = fail = 0
+    errors: list[str] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_voice_worker, voice, voice_paths[voice], items): voice
+            for voice, items in by_voice.items()
+        }
+        finished = 0
+        for fut in as_completed(futures):
+            voice = futures[fut]
+            try:
+                for row in fut.result():
+                    if manifest_writer is not None:
+                        manifest_writer.writerow(row)
                     ok += 1
-                except Exception as exc:  # noqa: BLE001
-                    fail += 1
-                    if len(errors) < 5:
-                        errors.append(f"{futures[fut][:3]}: {exc}")
-                if n % 500 == 0:
-                    fh.flush()
-                    print(f"  ... {n}/{len(todo)} (ok={ok} fail={fail})", flush=True)
-    print(f"done: ok={ok} fail={fail} -> {synthetic_dir}/", flush=True)
+                    finished += 1
+                    if finished % 500 == 0:
+                        if manifest is not None:
+                            manifest.flush()
+                        print(
+                            f"  ... {finished}/{total} (ok={ok} fail={fail})",
+                            flush=True,
+                        )
+            except Exception as exc:  # noqa: BLE001
+                fail += len(by_voice[voice])
+                finished += len(by_voice[voice])
+                if len(errors) < 5:
+                    errors.append(f"[{voice}]: {exc}")
+    print(f"done: ok={ok} fail={fail}", flush=True)
     for err in errors:
         print(f"  ! {err}", file=sys.stderr)
-    if ok == 0:
+    if ok == 0 and total > 0:
         raise RuntimeError("no clips rendered, see errors above")
-    return synthetic_dir
+    return ok, fail

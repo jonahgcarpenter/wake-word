@@ -68,9 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="re-render even if manifest lists the clip"
     )
     p.add_argument(
-        "--jobs", type=int, default=0, help="render threads (default: cpu count)"
+        "--jobs", type=int, default=0, help="max concurrent voices (default: all)"
     )
-    p.add_argument("--piper-bin", default="piper")
     p.add_argument(
         "--voice-cache", default="", help="voice dir (default: data/background/piper)"
     )
@@ -118,7 +117,6 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             force=args.force,
             jobs=args.jobs or None,
-            piper_bin=args.piper_bin,
             voice_cache=Path(args.voice_cache) if args.voice_cache else None,
         )
     elif args.cmd == "train":
