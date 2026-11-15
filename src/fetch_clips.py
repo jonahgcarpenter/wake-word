@@ -159,6 +159,11 @@ def _write_sidecar(
                 sidecar[k] = v
     if duplicate_of is not None and duplicate_of != clip_id:
         sidecar["duplicate_of"] = duplicate_of
+    if "wakeWord" not in sidecar or "engine" not in sidecar:
+        print(
+            f"  ! {clip_id}: API response has no model info (wakeWord/engine missing)",
+            file=sys.stderr,
+        )
     json_path.write_text(json.dumps(sidecar, indent=2))
 
 

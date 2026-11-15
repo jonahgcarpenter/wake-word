@@ -19,6 +19,7 @@ MANIFEST_FIELDS = [
     "orig_label",
     "score",
     "trigger",
+    "model",
     "human_label",
     "classified_wav",
 ]
@@ -35,6 +36,44 @@ def load_manifest(manifest: Path) -> dict:
             for row in csv.DictReader(f):
                 done[row["source_wav"]] = row
     return done
+
+
+def _sidecar_model(classified_wav: str, manifest: Path) -> str:
+    """Find the wakeWord model for a classified clip from its sidecar JSON."""
+    if not classified_wav:
+        return ""
+    name = Path(classified_wav).name
+    cands = [Path(classified_wav)]
+    cands.append(Path.cwd() / classified_wav)
+    cands.append(manifest.parent / classified_wav)
+    cands.append(manifest.parent / name)
+    for sub in ("true", "false"):
+        cands.append(manifest.parent / sub / name)
+    for cand in cands:
+        side = cand.with_suffix(".json")
+        if side.is_file():
+            try:
+                return str(json.loads(side.read_text()).get("wakeWord", ""))
+            except Exception:  # noqa: BLE001
+                return ""
+    return ""
+
+
+def _migrate_manifest(manifest: Path) -> None:
+    """Add missing columns to an existing manifest in place."""
+    with manifest.open() as fh:
+        reader = csv.DictReader(fh)
+        if reader.fieldnames and set(MANIFEST_FIELDS) <= set(reader.fieldnames):
+            return
+        rows = list(reader)
+    for row in rows:
+        if not row.get("model"):
+            row["model"] = _sidecar_model(row.get("classified_wav", ""), manifest)
+    with manifest.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=MANIFEST_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"migrated {manifest} to include 'model' ({len(rows)} rows)")
 
 
 def detect_player(explicit: str | None) -> list[str] | None:
@@ -115,6 +154,8 @@ def run_label(
         return 0, 0, 0
 
     manifest = classified_dir / "manifest.csv"
+    if manifest.exists():
+        _migrate_manifest(manifest)
     done = {} if relabel else load_manifest(manifest)
     player_cmd = None if no_play else detect_player(player)
     if not no_play and player_cmd is None:
@@ -183,6 +224,7 @@ def run_label(
                     "orig_label": orig,
                     "score": info.get("score", ""),
                     "trigger": info.get("trigger", ""),
+                    "model": info.get("wakeWord", ""),
                     "human_label": human,
                     "classified_wav": str(dest),
                 }
