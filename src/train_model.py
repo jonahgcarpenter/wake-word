@@ -102,6 +102,32 @@ def _extracted_wav_dirs(root: Path) -> list[Path]:
     return sorted({p.parent for p in root.rglob("*.wav")})
 
 
+def _flatten_wavs(sources: list[Path], dest: Path) -> Path:
+    """Symlink every wav under sources into one flat dir (official loaders
+    scandir a single level and choke on subdirectories). Idempotent."""
+    dest.mkdir(parents=True, exist_ok=True)
+    want = {}
+    for src in sources:
+        if src.is_file() and src.suffix == ".wav":
+            want[f"{src.parent.name}__{src.name}"] = src
+        elif src.is_dir():
+            for wav in sorted(src.rglob("*.wav")):
+                rel = wav.relative_to(src).parent
+                tag = "__".join(rel.parts) if rel.parts else src.name
+                want[f"{tag}__{wav.name}"] = wav
+    have = {p.name for p in dest.iterdir()}
+    for name, src in want.items():
+        if name not in have:
+            try:
+                (dest / name).symlink_to(src)
+            except FileExistsError:
+                pass
+    for stale in dest.iterdir():
+        if stale.name not in want:
+            stale.unlink()
+    return dest
+
+
 def _ensure_musan(background_dir: Path) -> list[Path]:
     """Download + extract MUSAN. Returns usable background dirs (maybe empty)."""
     dest = background_dir / "musan"
@@ -183,22 +209,46 @@ def _ensure_assets(cfg: dict, repo: Path, force: bool = False) -> dict:
                 background_paths.append(str(d))
     except Exception as exc:  # noqa: BLE001
         print(f"WARNING: RIRs unavailable ({exc}), continuing", file=sys.stderr)
-    background_paths = [p for p in background_paths if Path(p).exists()]
-    rir_paths = [p for p in rir_paths if Path(p).exists()]
-    dupes = cfg.get("background_paths_duplication_rate", [])
-    expanded = []
-    for i, p in enumerate(background_paths):
-        expanded.extend([p] * (dupes[i] if i < len(dupes) else 1))
-    print(f"background dirs ({len(expanded)}): {expanded}")
-    print(f"RIR dirs ({len(rir_paths)}): {rir_paths}")
-    if not expanded:
+    flat = background_dir / "_flat"
+    _flatten_wavs([Path(p) for p in rir_paths], flat / "rirs")
+    _flatten_wavs([Path(p) for p in background_paths], flat / "background")
+    # Official train.py scandirs configured dirs into FILE lists before
+    # augment_clips (it random.choice()s + loads entries directly, so any
+    # subdirectory entry crashes it). Our flat dirs contain only wav symlinks.
+    import os
+
+    rir_files = [i.path for i in os.scandir(flat / "rirs") if i.is_file()]
+    print(
+        f"background wavs: {len(list((flat / 'background').iterdir()))}, "
+        f"RIR wavs: {len(rir_files)}",
+        flush=True,
+    )
+    if not list((flat / "background").iterdir()):
         print("WARNING: no background audio, augmentation runs dry", file=sys.stderr)
     return {
         "acav": acav,
         "fpval": fpval,
-        "background_paths": expanded,
-        "rir_paths": rir_paths,
+        "background_paths": [str(flat / "background")],
+        "rir_paths": rir_files,
     }
+
+
+def _ensure_oww_resources() -> None:
+    """Download the frozen mel/embedding ONNX models the pip package omits."""
+    import openwakeword
+
+    target = Path(openwakeword.__file__).parent.resolve() / "resources" / "models"
+    target.mkdir(parents=True, exist_ok=True)
+    for name, mdl in openwakeword.FEATURE_MODELS.items():
+        url = mdl["download_url"]
+        if url.endswith(".tflite"):
+            url = url[: -len(".tflite")] + ".onnx"
+        dest = target / url.split("/")[-1]
+        if dest.exists() and dest.stat().st_size > 1024:
+            print(f"cached: {dest.name}")
+            continue
+        print(f"asset: OWW {name} -> {dest}", flush=True)
+        _download(url, dest, min_bytes=1024)
 
 
 def _collect_wavs(d: Path) -> list[str]:
@@ -247,9 +297,14 @@ def _featurize_set(
     feature_file: Path,
     force: bool,
 ) -> None:
-    if feature_file.exists() and not force:
+    done_marker = feature_file.with_suffix(feature_file.suffix + ".done")
+    if done_marker.exists() and feature_file.exists() and not force:
         print(f"features cached: {feature_file.name}, skipping (use --force)")
         return
+    if feature_file.exists():
+        feature_file.unlink()
+    if done_marker.exists():
+        done_marker.unlink()
     from openwakeword.data import augment_clips
     from openwakeword.utils import compute_features_from_generator
 
@@ -274,6 +329,7 @@ def _featurize_set(
         device="gpu" if use_gpu else "cpu",
         ncpu=1 if use_gpu else 8,
     )
+    done_marker.touch()
 
 
 def run_train(
@@ -321,6 +377,7 @@ def run_train(
     )
 
     assets = _ensure_assets(cfg, repo, force=force)
+    _ensure_oww_resources()
     total_length = _median_total_length(pos_test)
     rounds = int(cfg.get("augmentation_rounds", 1))
     aug_batch = int(cfg.get("augmentation_batch_size", 16))
