@@ -1,7 +1,25 @@
+--extra-index-url https://download.pytorch.org/whl/cu117
 # Single Python dep list for the Docker build and local `uv run`.
 # Managed with uv + .venv: `uv venv && uv pip install -r requirements.txt`.
 # System packages (CUDA 11.7, ffmpeg, espeak-ng, piper binary) live in Dockerfile.
-# Training pins (Docker python3.10 only): torch==1.13.1, tensorflow==2.8.1,
-# datasets==2.14.4, pyarrow<15, fsspec<2024.1.0 (added with train_model.py).
+# Training stack entries are marked python_version == "3.10" so the local
+# py3.13 venv stays light; the Docker image (python3.10) installs everything.
 pyyaml>=6
+packaging>=23
 piper-tts>=1.3
+tqdm>=4
+torch==1.13.1+cu117; python_version == "3.10"
+numpy==1.26.4; python_version == "3.10"
+scipy>=1.10; python_version == "3.10"
+scikit-learn>=1.0; python_version == "3.10"
+torchinfo>=1.7; python_version == "3.10"
+torchmetrics==0.11.4; python_version == "3.10"
+onnx==1.14.0; python_version == "3.10"
+setuptools==80.9.0; python_version == "3.10"
+audiomentations>=0.28; python_version == "3.10"
+torch_audiomentations>=0.11; python_version == "3.10"
+mutagen>=1.45; python_version == "3.10"
+acoustics>=0.2; python_version == "3.10"
+pronouncing>=0.2; python_version == "3.10"
+soundfile>=0.12; python_version == "3.10"
+openwakeword>=0.5; python_version == "3.10"

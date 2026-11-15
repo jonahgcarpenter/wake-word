@@ -18,8 +18,14 @@ services:
     build: .
     image: oww-pipeline:latest
     container_name: oww-train
-    runtime: nvidia
     shm_size: 32g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - ./data:/work/data
       - ./configs:/work/configs

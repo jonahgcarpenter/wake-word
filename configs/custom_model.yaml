@@ -26,3 +26,21 @@ layer_size: 32
 steps: 100000
 max_negative_weight: 1500
 target_false_positives_per_hour: 0.2
+
+# OpenWakeWord-native training inputs (train_model.py).
+# background_paths entries are scanned for wav files; existing dirs are used as-is,
+# missing bundled sets (musan/rirs) are downloaded under data/background/.
+background_paths:
+  - "data/background/musan"
+  - "data/background/rir_noises"
+background_paths_duplication_rate: [1, 1]
+rir_paths:
+  - "data/background/rirs"
+# Precomputed negative features (17GB download on first run).
+feature_data_files:
+  ACAV100M_sample: "data/background/acav_features.npy"
+batch_n_per_class:
+  ACAV100M_sample: 1024
+  adversarial_negative: 50
+  positive: 50
+false_positive_validation_data_path: "data/background/validation_features.npy"

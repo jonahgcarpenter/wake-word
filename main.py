@@ -78,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", default="configs/custom_model.yaml")
     p.add_argument("--synthetic-dir", default="data/synthetic")
     p.add_argument("--models-dir", default="data/models")
+    p.add_argument("--force", action="store_true", help="redo features even if cached")
 
     p = sub.add_parser("evaluate", help="validate model on data/classified/")
     p.add_argument("--model", required=True)
@@ -120,7 +121,12 @@ def main(argv: list[str] | None = None) -> int:
             voice_cache=Path(args.voice_cache) if args.voice_cache else None,
         )
     elif args.cmd == "train":
-        run_train(Path(args.config), Path(args.synthetic_dir), Path(args.models_dir))
+        run_train(
+            Path(args.config),
+            Path(args.synthetic_dir),
+            Path(args.models_dir),
+            force=args.force,
+        )
     elif args.cmd == "evaluate":
         run_evaluate(Path(args.model), Path(args.classified_dir), Path(args.output))
     elif args.cmd == "export":
